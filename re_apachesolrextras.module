@@ -1,0 +1,142 @@
+<?php
+
+
+/**
+ * @file
+ * Allows the creation of a SOLR search core once you know what port SOLR is running on
+ *
+ * @author Colin Calnan <colin@raisedeyebrow.com>
+ */
+
+/**
+ * Implementation of hook_menu().
+ *
+ */
+function re_apachesolrextras_menu(){
+  $items = array();
+  
+  $items['admin/settings/re_apachesolrextras'] = array (
+    'title' => 'Create Apache SOLR core',
+    'type' => MENU_CALLBACK,
+    'page callback' => 're_apachesolrextras_create_core', 
+    'access arguments' => array('access administration pages'),
+  );
+  return $items;
+}
+
+/**
+ * This function is the menu callback function for clicking the "Create Core" button
+ * It runs CURL on a URL and on the Solr path returns a failure or success message.
+ * The Apache SOLR module must be enabled to run the core creation
+ *
+ * @return json A JSON encoded string to update the AHAH form.
+ */
+function re_apachesolrextras_create_core() {
+  // Set up an array of error codes for CURL
+  $errors = array( 
+		'0'  	 =>   'Network Error',
+		'301'  =>   'Moved Permanently',
+		'400'  =>   'Bad Request',
+		'403'  =>   'Not Authorized',
+		'404'  =>   'Not Found',
+		'409'  =>   'Conflict (e.g. name already exists)',
+		'500'  =>   'Internal Server Error', 
+	);
+  // If the Solr Path is set then try to run this command
+  if($path = explode('/', variable_get('apachesolr_path', ''))) {
+    if($path[1] == 'solr' && !$path[3]) {
+      // Set up the URL 
+      $options = array(
+        'query' => array(  
+          'action' => 'CREATE',
+          'name' => $path[2],
+          'instanceDir' => $path[2],
+        ),
+      );
+      $url = url('http://localhost:8080/solr/admin/cores', $options);
+      // Set up Curl
+      $ch = curl_init($url);
+      curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+      curl_setopt($ch, CURLOPT_HEADER, 0);
+      curl_setopt($ch, CURLOPT_HTTPHEADER, array('Cache-Control: no-cache'));
+      curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    
+      //Execute Curl
+      curl_exec($ch);
+      $info = curl_getinfo($ch);
+      curl_close($ch);
+
+      // If there was a problem...
+      if ($info['http_code'] != 200){
+        watchdog('Apache Solr', t('There was a problem creating your core "' . variable_get('apachesolr_path', '') . '" : ' . $info['http_code'] . ' ' . $errors[$info[http_code]]), NULL, WATCHDOG_ERROR);
+        $output = t('Failure. There was a problem creating your core "' . variable_get('apachesolr_path', '') . '" : ' . $info['http_code'] . ' ' . $errors[$info[http_code]]); 
+      } else {
+        $output = t('Success, a core was created at :' . variable_get('apachesolr_path', '') . '". Now save this page before proceeding.');
+      }
+    }
+  }
+  // Must return things with drupal_json
+  drupal_json($output);
+}
+
+/**
+ * Implementation of hook_form_alter().
+ */
+function re_apachesolrextras_form_alter(&$form, &$form_state, $form_id) {
+  switch($form_id) {
+    case 'apachesolr_settings':
+      $file_exists = file_exists(dirname(__FILE__) . '/SolrPhpClient/Apache/Solr/Service.php');
+      $host = variable_get('apachesolr_host', 'localhost');
+      $port = variable_get('apachesolr_port', 8983);
+      $path = variable_get('apachesolr_path', '/solr');
+      $ping = FALSE;
+      $solr = apachesolr_get_solr();
+      $ping = @$solr->ping(variable_get('apachesolr_ping_timeout', 4));
+      // If SOLR has not responded we create a button to allow the user to create a core...
+      if(!$ping) {
+        $link = array(
+          'apachesolr_path_create_core' => array(
+            '#title' => t('Create SOLR core'),
+            '#type' => 'button',
+            '#value' => t('Create core'),
+            '#prefix' => '<div id="re_apachesolr_message" class="messages info">' . t('An Apache Solr core was not detected. Click the "Create Core" button to try to create an Apache SOLR core for this site at <strong>"Solr path"</strong> above.<br /> If you change the <strong>Solr path</strong> please save the form before creating the core. ') . '</div>',
+            '#ahah' => array(
+              'event' => 'click',
+              'path' => 'admin/settings/re_apachesolrextras',
+              'method' => 'replace',
+              'wrapper' => 're_apachesolr_message',
+              'effect' => 'fade',
+              'progress' => array (
+                'type' => 'throbber',
+                'message' => t('Creating SOLR core...'),
+              ),
+            ),
+          ),
+        );
+        
+        // Find the location of the 'apachesolr_path'
+        // Insert the checkbox directly after it...
+        $find_pos_of = 'apachesolr_path';
+        $keys = array_keys($form);
+        $flip = array_flip($keys);
+        $pos = $flip[$find_pos_of];
+        // Insert button in form...
+        _re_apachesolrextras_array_insert($form, $pos+1, $link);
+        }
+      break;
+  }
+}
+
+/**
+ * Function to insert array element into specific position in the array
+ *
+ * @param &$array array A pointer to the original array.
+ * @param $position int The position in the original array that you want to insert a new element.
+ * @param $insert_array array The element that you want to insert. Passed as an array.
+ *
+ * @see - http://forums.devshed.com/showpost.php?p=1208308&postcount=5
+ */
+function _re_apachesolrextras_array_insert (&$array, $position, $insert_array) {
+  $first_array = array_splice ($array, 0, $position);
+  $array = array_merge ($first_array, $insert_array, $array);
+} 

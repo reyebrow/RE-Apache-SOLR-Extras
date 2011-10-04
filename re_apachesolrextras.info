@@ -1,0 +1,8 @@
+;$Id$
+name = 'RE Apache SOLR Extras'
+description = 'Enables the creation of an Apache SOLR core for the current site if one hasn't been created.'
+package = 'Raised Eyebrow Custom Modules'
+dependencies[] = apachesolr
+core = 6.x
+php = 5.2
+version = 6.x-1.0
