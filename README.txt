@@ -1,4 +1,4 @@
-This is a pretty straightforward module.
+This is a pretty straightforward module for Drupal 6.
 
 However when testing you may want to delete a core that you created. It's relatively simple to do once you know the path to your solr cores.
 
